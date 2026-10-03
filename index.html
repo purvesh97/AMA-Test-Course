@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Device Login Manager</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #f1f4f9;
+      color: #222;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 40px 16px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      padding: 28px;
+      width: 100%;
+      max-width: 720px;
+    }
+    .login { max-width: 380px; margin-top: 60px; }
+    h1 { font-size: 22px; margin-bottom: 6px; }
+    p.sub { color: #666; font-size: 14px; margin-bottom: 20px; }
+    label { display: block; font-size: 13px; margin: 12px 0 4px; color: #444; }
+    input, select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccd;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 16px;
+      font-size: 14px;
+      background: #2563eb;
+      color: #fff;
+    }
+    button:hover { opacity: 0.9; }
+    button.secondary { background: #e5e7eb; color: #222; }
+    button.danger { background: #dc2626; }
+    button.small { padding: 6px 10px; font-size: 13px; }
+    .full { width: 100%; margin-top: 18px; }
+    .error { color: #dc2626; font-size: 13px; margin-top: 10px; min-height: 16px; }
+    .hint { font-size: 12px; color: #888; margin-top: 14px; text-align: center; }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .device {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 10px;
+    }
+    .device.current { border-color: #2563eb; background: #f0f5ff; }
+    .device-info { display: flex; gap: 12px; align-items: center; }
+    .icon { font-size: 28px; }
+    .name { font-weight: 600; }
+    .meta { font-size: 12px; color: #666; margin-top: 2px; }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      background: #2563eb;
+      color: #fff;
+      border-radius: 10px;
+      padding: 2px 8px;
+      margin-left: 6px;
+    }
+    .empty { text-align: center; color: #888; padding: 20px; }
+    .hidden { display: none; }
+    .add-form {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr auto;
+      gap: 8px;
+      align-items: end;
+      background: #f9fafb;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    .add-form label { margin-top: 0; }
+    @media (max-width: 600px) {
+      .add-form { grid-template-columns: 1fr; }
+      .device { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Login Screen -->
+  <div id="loginView" class="card login">
+    <h1>Device Login Manager</h1>
+    <p class="sub">Sign in to manage your logged-in devices</p>
+    <form id="loginForm">
+      <label for="email">Email</label>
+      <input type="email" id="email" placeholder="admin@test.com" required />
+      <label for="password">Password</label>
+      <input type="password" id="password" placeholder="123456" required />
+      <button type="submit" class="full">Login</button>
+      <div id="loginError" class="error"></div>
+    </form>
+    <p class="hint">Demo: admin@test.com / 123456</p>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboardView" class="card hidden">
+    <div class="header">
+      <div>
+        <h1>My Devices</h1>
+        <p class="sub" id="welcome" style="margin-bottom:0"></p>
+      </div>
+      <button class="secondary" id="logoutBtn">Logout</button>
+    </div>
+
+    <div class="toolbar">
+      <button id="toggleAddBtn" class="small">+ Add Test Device</button>
+      <button id="logoutOthersBtn" class="small danger">Logout All Other Devices</button>
+    </div>
+
+    <form id="addForm" class="add-form hidden">
+      <div>
+        <label for="devName">Device Name</label>
+        <input id="devName" placeholder="e.g. iPhone 15" required />
+      </div>
+      <div>
+        <label for="devType">Type</label>
+        <select id="devType">
+          <option value="Mobile">Mobile</option>
+          <option value="Desktop">Desktop</option>
+          <option value="Tablet">Tablet</option>
+        </select>
+      </div>
+      <div>
+        <label for="devLocation">Location</label>
+        <input id="devLocation" placeholder="e.g. Mumbai, IN" />
+      </div>
+      <button type="submit" class="small">Add</button>
+    </form>
+
+    <div id="deviceList"></div>
+  </div>
+
+  <script>
+    const DEMO_USER = { email: "admin@test.com", password: "123456" };
+    const STORE_KEY = "dlm_devices";
+    const SESSION_KEY = "dlm_session";
+
+    // ---- Storage helpers (localStorage, falls back to memory) ----
+    const memory = {};
+    function load(key, fallback) {
+      try {
+        const v = localStorage.getItem(key);
+        return v ? JSON.parse(v) : fallback;
+      } catch { return memory[key] ?? fallback; }
+    }
+    function save(key, value) {
+      try { localStorage.setItem(key, JSON.stringify(value)); }
+      catch { memory[key] = value; }
+    }
+
+    // ---- Detect current device ----
+    function detectDevice() {
+      const ua = navigator.userAgent;
+      let browser = "Browser";
+      if (/Edg\//.test(ua)) browser = "Edge";
+      else if (/Chrome\//.test(ua)) browser = "Chrome";
+      else if (/Firefox\//.test(ua)) browser = "Firefox";
+      else if (/Safari\//.test(ua)) browser = "Safari";
+
+      let os = "Unknown OS";
+      if (/Windows/.test(ua)) os = "Windows";
+      else if (/Android/.test(ua)) os = "Android";
+      else if (/iPhone|iPad/.test(ua)) os = "iOS";
+      else if (/Mac OS/.test(ua)) os = "macOS";
+      else if (/Linux/.test(ua)) os = "Linux";
+
+      let type = "Desktop";
+      if (/iPad|Tablet/.test(ua)) type = "Tablet";
+      else if (/Mobi|Android|iPhone/.test(ua)) type = "Mobile";
+
+      return { name: `${browser} on ${os}`, type };
+    }
+
+    function icon(type) {
+      return { Mobile: "📱", Tablet: "📟", Desktop: "💻" }[type] || "🖥️";
+    }
+
+    function formatTime(ts) {
+      return new Date(ts).toLocaleString();
+    }
+
+    function uid() {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    }
+
+    // ---- Elements ----
+    const loginView = document.getElementById("loginView");
+    const dashboardView = document.getElementById("dashboardView");
+    const loginForm = document.getElementById("loginForm");
+    const loginError = document.getElementById("loginError");
+    const deviceList = document.getElementById("deviceList");
+    const addForm = document.getElementById("addForm");
+
+    // ---- Login ----
+    loginForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+
+      if (email !== DEMO_USER.email || password !== DEMO_USER.password) {
+        loginError.textContent = "Invalid email or password.";
+        return;
+      }
+      loginError.textContent = "";
+
+      const current = detectDevice();
+      const devices = load(STORE_KEY, []);
+      const id = uid();
+      devices.push({
+        id,
+        name: current.name,
+        type: current.type,
+        location: "This device",
+        loginTime: Date.now()
+      });
+      save(STORE_KEY, devices);
+      save(SESSION_KEY, { email, deviceId: id });
+      loginForm.reset();
+      showDashboard();
+    });
+
+    // ---- Dashboard ----
+    function showDashboard() {
+      const session = load(SESSION_KEY, null);
+      if (!session) return showLogin();
+
+      // If this device was logged out remotely, end session
+      const devices = load(STORE_KEY, []);
+      if (!devices.some(d => d.id === session.deviceId)) {
+        save(SESSION_KEY, null);
+        return showLogin();
+      }
+
+      loginView.classList.add("hidden");
+      dashboardView.classList.remove("hidden");
+      document.getElementById("welcome").textContent = `Signed in as ${session.email}`;
+      renderDevices();
+    }
+
+    function showLogin() {
+      dashboardView.classList.add("hidden");
+      loginView.classList.remove("hidden");
+    }
+
+    function renderDevices() {
+      const session = load(SESSION_KEY, null);
+      const devices = load(STORE_KEY, []);
+      deviceList.innerHTML = "";
+
+      if (devices.length === 0) {
+        deviceList.innerHTML = '<div class="empty">No devices logged in.</div>';
+        return;
+      }
+
+      // Current device first, then newest
+      devices
+        .sort((a, b) => (b.id === session.deviceId) - (a.id === session.deviceId) || b.loginTime - a.loginTime)
+        .forEach(d => {
+          const isCurrent = d.id === session.deviceId;
+          const row = document.createElement("div");
+          row.className = "device" + (isCurrent ? " current" : "");
+
+          const info = document.createElement("div");
+          info.className = "device-info";
+          info.innerHTML = `
+            <span class="icon">${icon(d.type)}</span>
+            <div>
+              <div class="name"></div>
+              <div class="meta"></div>
+            </div>`;
+          info.querySelector(".name").textContent = d.name;
+          if (isCurrent) info.querySelector(".name").insertAdjacentHTML("beforeend", '<span class="badge">This device</span>');
+          info.querySelector(".meta").textContent =
+            `${d.type} · ${d.location || "Unknown location"} · Logged in ${formatTime(d.loginTime)}`;
+
+          const btn = document.createElement("button");
+          btn.className = "small " + (isCurrent ? "secondary" : "danger");
+          btn.textContent = isCurrent ? "Logout" : "Remove";
+          btn.onclick = () => isCurrent ? logout() : removeDevice(d.id);
+
+          row.append(info, btn);
+          deviceList.appendChild(row);
+        });
+    }
+
+    function removeDevice(id) {
+      if (!confirm("Log out this device?")) return;
+      save(STORE_KEY, load(STORE_KEY, []).filter(d => d.id !== id));
+      renderDevices();
+    }
+
+    function logout() {
+      const session = load(SESSION_KEY, null);
+      if (session) save(STORE_KEY, load(STORE_KEY, []).filter(d => d.id !== session.deviceId));
+      save(SESSION_KEY, null);
+      showLogin();
+    }
+
+    document.getElementById("logoutBtn").onclick = logout;
+
+    document.getElementById("logoutOthersBtn").onclick = () => {
+      const session = load(SESSION_KEY, null);
+      const devices = load(STORE_KEY, []);
+      if (devices.length <= 1) return alert("No other devices to log out.");
+      if (!confirm("Log out all other devices?")) return;
+      save(STORE_KEY, devices.filter(d => d.id === session.deviceId));
+      renderDevices();
+    };
+
+    // ---- Add test device ----
+    document.getElementById("toggleAddBtn").onclick = () => addForm.classList.toggle("hidden");
+
+    addForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const devices = load(STORE_KEY, []);
+      devices.push({
+        id: uid(),
+        name: document.getElementById("devName").value.trim(),
+        type: document.getElementById("devType").value,
+        location: document.getElementById("devLocation").value.trim() || "Unknown location",
+        loginTime: Date.now()
+      });
+      save(STORE_KEY, devices);
+      addForm.reset();
+      addForm.classList.add("hidden");
+      renderDevices();
+    });
+
+    // Sync across tabs (open in two tabs to simulate two devices)
+    window.addEventListener("storage", showDashboard);
+
+    // ---- Init ----
+    showDashboard();
+  </script>
+</body>
+</html>
